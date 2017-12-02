@@ -1,0 +1,12 @@
+#!/bin/bash
+
+if [ $1 = '-h' ];then
+	echo 'usage: spaceToTab file_in'
+elif [ -f $1 ];then
+	python ~/piRNA/Code/Tianxiong/python_code/tran_xlstxt_to_txt.py $1 temp
+	mv temp $1
+	echo 'Done!!!'
+else
+	echo 'incorrect input!!! use -h for help'
+fi
+

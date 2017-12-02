@@ -1,0 +1,17 @@
+#!/bin/bash
+
+if [ $# -lt 1 ]; then
+	echo "usage:"
+	echo "EnsembleGtfToGencodeGtf in.gtf out.gtf"
+	echo "caution: the program will delete the Ensemble Gtf file"
+	exit 1
+fi
+
+ense_gtf=$1
+genc_gtf=$2
+
+awk '!/Selenocysteine/' ${ense_gtf} > temp.gtf
+awk '{if($1 ~ /\#\!*/){print $0}else{print "chr"$0}}' temp.gtf > ${genc_gtf}
+
+rm ${ense_gtf}
+rm temp.gtf

@@ -1,0 +1,26 @@
+#!/bin/bash
+
+help_info(){
+	echo "usage:"
+	echo "sh BB_SortBamToStrandBw_singleend.sh in.bam out.dir out.prefix chrom_length yes/reverse"
+	echo ""
+}
+
+if [ $# -lt 1 ];then
+	help_info
+	exit 1
+fi
+
+samtools view -h -f 99 -b ${1} > temp_${3}_crick.bam
+samtools view -h -f 163 -b ${1} > temp_${3}_watson.bam
+
+BB_BamToBw temp_${3}_watson.bam ${2}${3}_watson.bw ${4}
+BB_BamToBw temp_${3}_crick.bam ${2}${3}_crick.bw ${4}
+
+if [ "$5" == "reverse" ];then
+	mv ${2}${3}_watson.bw temp_${3}.bw
+	mv ${2}${3}_crick.bw ${2}${3}_watson.bw 
+	mv temp_${3}.bw ${2}${3}_crick.bw 
+fi
+rm temp_${3}_crick.bam temp_${3}_watson.bam
+

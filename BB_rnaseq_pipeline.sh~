@@ -1,0 +1,330 @@
+#!/bin/bash
+#TODO: add $DATE
+
+##----INTRO-----------##
+# Name=BB_Pip_RNA
+# Date=Apr20 ,2016
+# Update=Jan 15, 2017
+# Update information:
+# Update the format
+
+########################
+# Purpose
+#This file is for doing some pre-analysis for each RNA-seq samples
+#1.Mapping: bowtie2 + STAR
+#2.Count Feature Signal: htseq-count
+#3.Plot Results: to do
+
+#######--Arguments--#######
+help_info(){
+	echo "Author: Tianxiong"
+	echo "usage:"
+	echo "bash BB_Pip_RNA <option>* (-l input_left.fq) (-g genome) [-r input_right.fq] [-S STAR_index] [-B bowtie_index] [-c CPU] [-p out.prefix] [-o output_dir] [-L yes] [-M number] [-m number] [-R Y] [-H genome.gtf]"
+	echo "Please use bash BB_Pip_RNA"
+	echo ""
+	echo "Arguments:"
+	echo "-l left RNA-seq fastq file."
+	echo "-r right RNA-seq fastq file. [ set to N or not set if single-end ]"
+	echo "-g genome used for this pipeline. eg: hg38 or mm10"
+	echo "-S STAR index for mapping"
+	echo "-B bowtie2 index for remove rRNA"
+	echo "-C chrom.size file for bigWig file generate"
+	echo "-c CPU used.---default: 8"
+	echo "-p prefix output name.---default: sample name"
+	echo "-o output directory.---default: ./"
+	echo "-L library type, default is dUTP, if yes, opossite; you can set to miss if you are not sure"
+	echo "-M max allowed multiple mapped reads for STAR map.---default: 100 (-1 mean not allowed)"
+	echo "-m max mismatch allowed for STAR map"
+	echo "-R set to N if don't remove duplicates---default: removed"
+	echo "-A attribute for htseq.---default: gene_id"
+	echo "-H gtf file for htseq count, htseq will use id for feature name\n set to N if do not calculate feature signal; if have several gtf for htseq count, use like this: a.gtf,b.gtf,c.gtf"
+}
+
+
+if [ $# -lt 2 ];then
+	help_info
+	exit 1
+fi
+
+CPU=8
+OUTPATH=./
+PREFIX=0
+LIBRARY=reverse
+RIGHT=N
+MAPNUM=100
+MISMATCH=2
+REMOVE=Y
+ATTRIBUTE=gene_id
+
+while getopts ":l:r:S:B:p:c:o:L:M:m:R:H:C:g:A:" Arg
+do
+	case $Arg in
+		l)	LEFT=$OPTARG;;
+		r)  	RIGHT=$OPTARG;;
+		g)	GENOME=$OPTARG;;
+		S)	INDEX_STAR=$OPTARG;;
+		B)  	INDEX_BOWTIE2=$OPTARG;;
+		p)	PREFIX=$OPTARG;;
+		c)	CPU=$OPTARG;;
+		o)	OUTPATH=$OPTARG;;
+		L)	LIBRARY=$OPTARG;;
+		M)  	MAPNUM=$OPTARG;;
+		m)  	MISMATCH=$OPTARG;;
+		R)  	REMOVE=$OPTARG;;
+		H)  	HTSEQ=$OPTARG;;
+		C)	CHROMSIZE=$OPTARG;;
+		A)	ATTRIBUTE=$OPTARG;;
+		?)	echo "Wrong parameter!!!"
+			exit 1;;
+	esac
+done
+
+######Configure Parameters########
+if [ "$PREFIX" == "0" ];then
+	PREFIX=${LEFT%.f*q*}
+fi
+
+if [ ! -f "$LEFT" ];then
+	echo -e "\033[40;31;1mError: please specify the right input fastq file\033[0m"
+	exit 1
+fi
+
+if [ ! -f "$RIGHT" ];then
+	echo -e "\033[40;33;1mWARNING: you did not specify the right end of input \
+		fastq file, use single end mode\033[0m"
+fi
+
+if [ ! -n "$GENOME" ];then
+	echo -e "\033[40;31;1mError: please use -g to specify genome used\033[0m"
+	exit 1
+fi
+
+if [ ! -d "$OUTPATH" ];then
+	echo -e "\033[40;33;1mWARNING: output path not found, create one\033[0m"
+fi
+
+if [ ! -n "$INDEX_STAR" ];then
+	INDEX_STAR=/data/tongji2/Annotation/Index/${GENOME}_star_gtf/
+fi
+
+if [ ! -n "$INDEX_BOWTIE2" ];then
+	INDEX_BOWTIE2=/data/tongji2/Annotation/Index/${GENOME}_bowtie2/rRNA
+fi
+
+if [ ! -n "$CHROMSIZE" ];then
+	CHROMSIZE=/data/tongji2/Annotation/ChromSize/${GENOME}.chrom.size.long
+fi
+
+if [ ! -n "$HTSEQ" ];then
+	HTSEQ=/data/tongji2/Annotation/GtfGff/${GENOME}.gtf
+fi
+
+
+###########
+# process #
+###########
+
+
+###############
+# Preparation #
+###############
+
+
+###rename parameter LEFT and RIGHT
+PWD=`pwd`
+LEFT=$PWD/`basename $LEFT`
+if [ "$RIGHT" != "N" ];then
+	RIGHT=$PWD/`basename $RIGHT`
+	TYPE=paired
+else
+	TYPE=single
+fi
+
+###make directories
+if [ ! -d "${OUTPATH}" ];then
+	mkdir -p ${OUTPATH}
+fi
+
+cd ${OUTPATH}
+
+if [ ! -d log_file ];then
+	mkdir log_file
+fi
+
+if [ ! -d RNAseq-rRNA ];then
+	mkdir RNAseq-rRNA
+fi
+
+if [ ! -d STAR ];then
+	mkdir STAR
+fi
+
+if [ ! -d Htseq ];then
+	mkdir Htseq
+fi
+
+if [ ! -d summary ];then
+	mkdir summary
+fi
+
+if [ ! -d bigWig ];then
+	mkdir bigWig
+fi
+
+###check index
+GENOME_FA="/data/tongji2/Annotation/Fasta/"$GENOME".fa"
+if [ -f $INDEX_STAR"chrLength.txt" -a -f $INDEX_STAR"chrNameLength.txt" -a -f $INDEX_STAR"chrName.txt" -a -f $INDEX_STAR"chrStart.txt" -a -f $INDEX_STAR"Genome" -a -f $INDEX_STAR"genomeParameters.txt" -a -f $INDEX_STAR"SA" -a -f $INDEX_STAR"SAindex" ];then
+	echo -e "\033[40;35;1mSTAR Index: "$INDEX_STAR"\033[0m"
+else
+	echo -e "\033[40;33;1mWARNING: no STAR index, create......\033[0m"
+	set -x
+	#TODO: make STAR index
+	set +x
+fi
+
+if [ -f $INDEX_BOWTIE2".1.bt2" -a -f $INDEX_BOWTIE2".2.bt2" -a -f $INDEX_BOWTIE2".3.bt2" -a -f $INDEX_BOWTIE2".4.bt2" -a -f $INDEX_BOWTIE2".rev.1.bt2" -a -f $INDEX_BOWTIE2".rev.2.bt2" ];then
+	echo -e "\033[40;35;1mbowtie2 Index: "$INDEX_BOWTIE2"\033[0m"
+else
+	echo -e "\033[40;33;1mWARNING: no bowtie2 index, create......\033[0m"
+	if [ -f "$GENOME_FA" ];then
+		set -x
+		bowtie2 build ${GENOME_FA} ${INDEX_BOWTIE2}
+		set +x
+	else
+		echo -e "\033[40;31;1mError: no bowtie2 index and no genome file to build\033[0m"
+		exit 1
+	fi
+fi
+
+###check chrom.size file
+if [ -f $CHROMSIZE ];then
+	echo -e "\033[40;35;1mchrom.size file: "$CHROMSIZE"\033[0m"
+else
+	echo -e "\033[40;31;1mError: no chrom.size file, please download via fetchChromSize\033[0m"
+	exit 1
+fi
+
+
+#################################
+###align with bowtie2 and STAR###
+#################################
+
+
+if [ ${RIGHT} == "N" ];then
+	###single-end mode
+	# bowtie2 remove rRNA
+	echo -e "\033[40;36;1m---single-end mode\033[0m"
+	echo ""
+	echo -e "\033[40;36;1m---remove rRNA via bowtie2......\033[0m"
+	set -x
+	bowtie2 -N 1 -p ${CPU} -q -x ${INDEX_BOWTIE2} -U ${LEFT} -S ./RNAseq-rRNA/${PREFIX}_rRNA.sam \
+		--un ./RNAseq-rRNA/${PREFIX}_RNAseq-rRNA.fq > log_file/${PREFIX}_bowtie2.log 2>&1
+	set +x
+	# STAR map
+	echo -e "\033[40;36;1m---align via STAR......\033[0m"
+	set -x
+	STAR 	--genomeDir ${INDEX_STAR} \
+		--runThreadN ${CPU} \
+		--readFilesIn ./RNAseq-rRNA/${PREFIX}_RNAseq-rRNA.fq \
+		--outFileNamePrefix ./STAR/${PREFIX} \
+		--outFilterMismatchNmax ${MISMATCH} \
+		--outFilterMultimapNmax ${MAPNUM} \
+		--outSAMattributes All \
+		--outFilterIntronMotifs RemoveNoncanonicalUnannotated
+	set +x
+else
+	###pair-end mode
+	# bowtie2 remove rRNA
+	echo -e "\033[40;36;1m---paired-end mode\033[0m"
+	echo ""
+	echo -e "\033[40;36;1m---remove rRNA via bowtie2......\033[0m"
+	set -x
+	bowtie2 -N 1 -p ${CPU} -q -x ${INDEX_BOWTIE2} -1 ${LEFT} -2 ${RIGHT} \
+		-S ./RNAseq-rRNA/${PREFIX}_rRNA.sam --un-conc ./RNAseq-rRNA/${PREFIX}_RNAseq-rRNA.fq \
+		> log_file/${PREFIX}_bowtie2.log 2>&1
+	set +x
+	echo -e "\033[40;36;1m---align via STAR......\033[0m"
+	set -x
+	STAR 	--genomeDir ${INDEX_STAR} \
+		--runThreadN ${CPU} \
+		--readFilesIn ./RNAseq-rRNA/${PREFIX}_RNAseq-rRNA.1.fq ./RNAseq-rRNA/${PREFIX}_RNAseq-rRNA.2.fq \
+		--outFileNamePrefix ./STAR/${PREFIX} \
+		--outFilterMismatchNmax ${MISMATCH} \
+		--outFilterMultimapNmax ${MAPNUM} \
+		--outSAMattributes All \
+		--outFilterIntronMotifs RemoveNoncanonicalUnannotated
+	set +x
+fi
+
+
+###########################################
+###alignment sort and signal calculation###
+###########################################
+
+
+###samtools
+echo -e "\033[40;36;1m---sam to indexed bam via samtools......\033[0m"
+samtools view -bhS -o ./STAR/${PREFIX}.bam ./STAR/${PREFIX}Aligned.out.sam
+samtools sort ./STAR/${PREFIX}.bam ./STAR/${PREFIX}.sort
+if [ ${REMOVE} == "Y" ];then
+	samtools rmdup ./STAR/${PREFIX}.sort.bam ./STAR/${PREFIX}.sort.rmdup.bam > /dev/null 2>&1
+	BAM=./STAR/${PREFIX}.sort.rmdup.bam
+	rm ./STAR/${PREFIX}.sort.bam
+else
+	BAM=./STAR/${PREFIX}.sort.bam
+fi
+rm -rf ./STAR/${PREFIX}Aligned.out.sam
+rm -rf RNAseq-rRNA/${PREFIX}_RNAseq-rRNA.*
+rm -rf RNAseq-rRNA/${PREFIX}_rRNA.sam
+
+###if -L=miss, judge the library type
+if [ "$LIBRARY" == "miss" ];then
+	infer_experiment.py -i ./STAR/${PREFIX}.bam -r \
+		/data/tongji2/Annotation/GtfGff/${GENOME}.bed > STAR/${PREFIX}_exp_type.txt
+	CHANCE_YES=`head -5 STAR/${PREFIX}_exp_type.txt | tail -1 | awk '{print $7}'`
+	CHANCE_REVERSE=`head -6 STAR/${PREFIX}_exp_type.txt | tail -1 | awk '{print $7}'`
+	LIBRARY=`awk -v CY=$CHANCE_YES -v CR=$CHANCE_REVERSE 'BEGIN{if(CY>0.6) {print "yes"} else if(CR>0.6) {print "reverse"} else {print "no"}}'`
+	echo -e "\033[40;33;1mWARNING: library is set to missing, guess is "$LIBRARY"......\033[0m"
+fi
+
+###htseq-count
+echo -e "\033[40;36;1m---signal calculation via htseq......\033[0m"
+if [ "$HTSEQ" != "N" ];then
+	set -x
+	htseq-count -m union -f bam -s ${LIBRARY} -t exon -i ${ATTRIBUTE} -q ${BAM} ${HTSEQ} \
+		> ./Htseq/${PREFIX}.sig
+	set +x
+	#normalize result to RPM
+	BB_NorHtseqRPM.py ./Htseq/${PREFIX}.sig ./Htseq/${PREFIX}.rpm
+fi
+
+
+##########################
+###density files making###
+##########################
+
+
+###confirm the normalize factor for density
+NUM_UNIQ_READ=`awk 'BEGIN{sum=0} {if($1 !~ /^__/ || $1 == "__no_feature"){sum=sum+$2}} END{print sum}' \
+	Htseq/${PREFIX}.sig`
+FACOTR=`awk -v num=$NUM_UNIQ_READ 'BEGIN{factor=num/1000000;print factor}'`
+
+###make bigWig and normalize
+if [ "$LIBRARY" == "no" ];then
+	set -x
+	BB_BamToBw ${BAM} bigWig/${PREFIX}_none_nor.bw ${CHROMSIZE}
+	BB_NorBw.sh bigWig/${PREFIX}_none_nor.bw bigWig/${PREFIX}.bw ${FACOTR} ${CHROMSIZE} plus
+	set +x
+	rm bigWig/${PREFIX}_none_nor.bw 
+else
+	set -x
+	BB_SortBamToStrandBw_${TYPE}end.sh ${BAM} bigWigi/ ${PREFIX}_none_nor ${CHROMSIZE} ${LIBRARY}
+	BB_NorBw.sh bigWig/${PREFIX}_none_nor_watson.bw bigWig/${PREFIX}_watson.bw ${FACOTR} ${CHROMSIZE} plus
+	BB_NorBw.sh bigWig/${PREFIX}_none_nor_crick.bw bigWig/${PREFIX}_crick.bw ${FACOTR} ${CHROMSIZE} minus 
+	set +x
+	rm bigWig/${PREFIX}_none_nor_watson.bw bigWig/${PREFIX}_none_nor_crick.bw 
+fi
+
+###finished
+echo -e "\033[40;32;1mfinished\033[0m"
+

@@ -1,0 +1,20 @@
+#!/bin/bash
+
+if [ $# -lt 1 ]; then
+	echo "usage:"
+	echo "BB_Blast query.fa db_name out.fa"
+	echo "caution: except query.fa, other parameter need not path"
+	exit 1
+fi
+
+out_path="/data/tongji2/piRNA/Output/Blast/"
+db_path="/home/tongji2/piRNA/Software/ncbi-blast-2.3.0+/db/"
+
+blastn -query $1 -db ${db_path}$2 -out ${out_path}$3 -max_target_seqs 1 -outfmt 6
+
+sort -k1,1n ${out_path}$3 | awk '!a[$1]++' > ${out_path}$3_temp
+
+mv ${out_path}$3_temp ${out_path}$3
+
+
+

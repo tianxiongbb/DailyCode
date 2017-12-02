@@ -1,0 +1,45 @@
+#!/bin/bash
+
+#######--Arguments--#######
+help_info(){
+	echo "usage:"
+	echo "sh Mar23_PslPipeline.sh in.bed chrom.size over.chain out.prefix covergae_needed"
+	echo "chrom.size is in the path /data/tongji2/InputForRunBT/ChromSize/"
+	echo "over.chain is in the path /data/tongji2/InputForRunBT/LiftOver/"
+}
+
+
+if [ $# -lt 4 ];then
+	help_info
+	exit 1
+fi
+
+path_chrom=/data/tongji2/Annotation/ChromSize/
+path_chain=/data/tongji2/Annotation/Chain/
+
+###Run###
+pre1=${1##*/}
+pre2=${4##*/}
+RN=${RANDOM}${RANDOM}${RANDOM}
+
+if [ ! "${1##*.}" == "psl" ];then
+	bedToPsl ${path_chrom}${2} ${1} temp_${pre1}.${RN}.psl
+	pslMap -chainMapFile -swapMap temp_${pre1}.${RN}.psl ${path_chain}${3} ${4}.psl
+	rm temp_${pre1}.${RN}.psl 
+else
+	pslMap -chainMapFile -swapMap ${1} ${path_chain}${3} ${4}.psl
+fi
+
+sort -k10,10 -k1,1nr ${4}.psl | awk '!a[$10]++' | awk -v ide=${5} '{FS="\t";OFS="\t"} {if($1/$11>ide){print $14,$16,$17,$10,$1/$11,$9}}' > ${4}.bed
+sort -k10,10 -k1,1nr ${4}.psl | awk '!a[$10]++' > ${4}_temp.${RN}.psl && mv ${4}_temp.${RN}.psl ${4}.psl
+
+
+
+
+
+
+
+
+
+
+

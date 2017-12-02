@@ -1,0 +1,31 @@
+#!/bin/bash
+
+###help_info
+help_info(){
+	echo "usage:"
+	echo "sh bamtobw_Dec4.sh [in.bam] [out.bw] [chrom.len] [factor; default: 1]"
+	echo ""
+}
+
+if [ $# -lt 3 ]
+then
+	help_info
+	exit 1
+fi
+
+if [ $# -lt 4 ];then
+	factor=1
+else
+	factor=$4
+fi
+
+###process
+
+#bam to wig
+samtools depth $1 | awk -v factor=$factor 'BEGIN{FS=OFS="\t";print "track type=print wiggle_0 name=fileName description=fileName"} {if($1!=lastC){print "variableStep chrom="$1" span=1"};lastC=$1;print $2,$3/factor}' > ${1}_temp.wig
+
+#wig to bigwig
+wigToBigWig ${1}_temp.wig $3 $2
+
+#remove temp file
+rm -rf ${1}_temp.wig

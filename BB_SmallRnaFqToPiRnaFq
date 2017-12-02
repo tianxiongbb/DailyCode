@@ -1,0 +1,82 @@
+#!/bin/bash
+
+#########--function--#########
+help_info(){
+	echo "usage:"
+	echo "SmallRnaFqToPiRnaFq.sh <option>* [-a adapter] [-i in.fq] [-o out.directory]"
+	echo ""
+	echo "necessary parameter:"
+	echo "-a adapter sequence used for small RNA experiment"
+	echo "-i small RNA file input"
+	echo "-m bowtie2 index file for remove"
+	echo "unnecessary parameter:"
+	echo "-l len range you want to filter, default: 23-35"
+	echo "-o piRNA fastq file output, default: stored in ./"
+	echo "-p prefix name for output files, default: prefix"
+	echo "-O the -O parameter used for cutadapt"
+	echo "-c CPU used for the program, default: 1"
+	echo "-s input file format sra, default: fq"
+	echo "caution: the cutadapt parameter -O need modification"
+}
+
+#########--arguments--#########
+if [ $# -lt 1 ]; then
+	help_info
+	exit 1
+fi
+
+len_filt="24-31"
+dire="./"
+prefix="prefix"
+CPU="1"
+sra=0
+
+while getopts "a:i:m:o:l:p:c:O:s" opt
+do
+	case $opt in
+		a) adap=$OPTARG;;
+		i) smrn=$OPTARG;;
+		o) dire=$OPTARG;;
+		l) len_filt=$OPTARG;;
+		p) prefix=$OPTARG;;
+		c) CPU=$OPTARG;;
+		s) sra=1;;
+		m) index=$OPTARG;;
+		O) cut_o=$OPTARG;;
+		?) echo "Wrong parameter!!!"
+		exit 1;;
+	esac
+done
+
+#########--process--#########
+
+######-sra dump-######
+##fastq-dump: dump sra file to fq
+if [ ${sra} -eq 1 ]; then
+	fastq-dump ${smrn} -O temp_fq_${prefix}.fq
+	smrn=temp_fq_${prefix}.fq
+fi
+
+######-adapter remove-######
+##cutadapt: remove adapter from primary small RNA fastq
+cutadapt -a ${adap} -e 0.15 -m 15 -O ${cut_o} -o temp_${prefix}.fq ${smrn} > ${dire}${prefix}_log_cutadapt 2>&1
+
+##prinseq: filter len from temp.fa
+perl /home/tongji2/piRNA/Software/prinseq-lite-0.20.4/prinseq-lite.pl \
+-fastq temp_${prefix}.fq -range_len ${len_filt} -out_good temp_good_${prefix} -out_bad temp_bad_${prefix} \
+> ${dire}${prefix}_log_prinseq 2>&1
+
+##fastqc: quality control
+
+/home/tongji2/piRNA/Software/FastQC/fastqc temp_good_${prefix}*
+
+mv temp_good_${prefix}*.html ${dire}${prefix}_fastqc.html
+
+##bowtie: remove reads mapped to known ncRNA
+bowtie2 -q -N 0 -S temp_${prefix}.sam -p ${CPU} --un ${dire}${prefix}_piRNA.fq -U temp_good_${prefix}.fastq -x ${index} > ${dire}${prefix}_log_bowtie 2>&1
+
+##remove temp file
+#rm -rf temp*
+
+
+

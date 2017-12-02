@@ -1,0 +1,25 @@
+#!/bin/bash
+
+###help_info
+help_info(){
+	echo "usage:"
+	echo "sh bamtobw_Dec4.sh [in.bam] [out.bw] [chrom.len]"
+	echo ""
+}
+
+if [ $# -lt 1 ]
+then
+	help_info
+	exit 1
+fi
+
+###process
+
+#bam to wig
+samtools depth $1 | perl -ne 'BEGIN{ print "track type=print wiggle_0 name=fileName description=fileName\n"}; ($c, $start, $depth) = split;if ($c ne $lastC) {print "variableStep chrom=$c span=10\n"; };$lastC=$c;next unless $. % 10 ==0;print "$start\t$depth\n" unless $depth<3' > ${1}_temp.wig
+
+#wig to bigwig
+wigToBigWig ${1}_temp.wig $3 $2
+
+#remove temp file
+rm -rf ${1}_temp.wig
